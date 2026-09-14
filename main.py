@@ -160,6 +160,18 @@ def quest_name(quest: Dict[str, Any]) -> str:
     return (quest.get("config") or {}).get("messages", {}).get("quest_name") or quest.get("id", "unknown quest")
 
 
+def quest_app_name(quest: Dict[str, Any]) -> str:
+    config = quest.get("config") or {}
+    application = config.get("application") or {}
+    messages = config.get("messages") or {}
+    return (
+        application.get("name")
+        or messages.get("game_title")
+        or messages.get("quest_name")
+        or quest_name(quest)
+    )
+
+
 def quest_state(quest: Dict[str, Any]) -> str:
     if completed(quest):
         return "completed"
@@ -356,6 +368,31 @@ async def complete_quest(client: QuestClient, quest: Dict[str, Any]) -> None:
         log.warning("Unsupported quest type (%s): %s", ", ".join(tasks) or "unknown", quest_name(quest))
 
 
+def print_quests(quests: List[Dict[str, Any]]) -> None:
+    log.info("Available quests:")
+    for index, quest in enumerate(quests, 1):
+        tasks = ", ".join(quest_tasks(quest)) or "unknown"
+        log.info("  [%d] %s (%s) - %s", index, quest_name(quest), tasks, quest_state(quest))
+
+
+async def select_quests(quests: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    print_quests(quests)
+    while True:
+        raw = (await asyncio.to_thread(input, "Select quests (numbers like 1,3 or 'all'): ")).strip().lower()
+        if raw in ("all", "*"):
+            return list(quests)
+        indices: List[int] = []
+        valid = True
+        for part in raw.replace(",", " ").split():
+            if not part.isdigit() or not 1 <= int(part) <= len(quests):
+                valid = False
+                break
+            indices.append(int(part) - 1)
+        if valid and indices:
+            return [quests[index] for index in indices]
+        print("Invalid selection. Enter quest numbers separated by commas, or 'all'.")
+
+
 async def run(args: argparse.Namespace) -> int:
     load_dotenv()
     token = (os.getenv("DISCORD_TOKEN") or "").strip()
@@ -377,17 +414,26 @@ async def run(args: argparse.Namespace) -> int:
     except QuestError as exc:
         log.error("Could not fetch quests: %s", exc)
 
-    matches = sorted((quest for quest in quests if matches_game(quest, args.game)), key=task_priority)
+    if not quests:
+        log.warning("No quests available for this account.")
+        return 1
 
-    activity: Dict[str, Any] = {"name": args.game, "type": 0}
-    if matches:
-        for quest in matches:
-            log.info("Found quest: %s [%s] (%s)", quest_name(quest), ", ".join(quest_tasks(quest)), quest_state(quest))
-        app_id = quest_app_id(matches[0])
-        if app_id:
-            activity["application_id"] = app_id
+    if args.game:
+        selected = [quest for quest in quests if matches_game(quest, args.game)]
+        if not selected:
+            log.warning("No '%s' quests found.", args.game)
+            print_quests(quests)
+            return 1
     else:
-        log.warning("No '%s' quests found.", args.game)
+        selected = await select_quests(quests)
+
+    matches = sorted(selected, key=task_priority)
+
+    activity_name = args.game or quest_app_name(matches[0])
+    activity: Dict[str, Any] = {"name": activity_name, "type": 0}
+    app_id = quest_app_id(matches[0])
+    if app_id:
+        activity["application_id"] = app_id
 
     asyncio.create_task(presence_worker(token, activity, args.status))
 
@@ -418,7 +464,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         prog="discord-quest-completer",
         description="Complete Discord quests and show a Playing status without installing the game.",
     )
-    parser.add_argument("--game", default="Marvel Rivals", help="Game name whose quests to complete (default: %(default)s)")
+    parser.add_argument(
+        "--game",
+        default=None,
+        help="Game name whose quests to complete. If omitted, all quests are listed for selection.",
+    )
     parser.add_argument(
         "--status",
         default="online",

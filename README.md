@@ -14,6 +14,7 @@ Made for the common quest types:
 
 - Completes `PLAY_ON_DESKTOP` quests by sending the same quest heartbeats the official client sends
 - Completes `WATCH_VIDEO` / `WATCH_VIDEO_ON_MOBILE` quests
+- Lists all current quests so you can pick which ones to complete
 - Auto-accepts pending quests, and waits for you if auto-accept fails
 - Shows a **Playing &lt;game&gt;** Rich Presence status through the Discord gateway
 - Automatic retries for rate limits, server errors, and network failures
@@ -72,14 +73,23 @@ Options:
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--game` | `Marvel Rivals` | Name of the game whose quests to complete |
+| `--game` | none | Complete every quest matching this game name instead of prompting |
 | `--status` | `online` | Presence: `online`, `idle`, `dnd`, or `invisible` |
 | `-v`, `--verbose` | off | Debug logging |
 
-Example of another game:
+By default the script lists all of your current quests and asks which to complete:
+
+```text
+Available quests:
+  [1] Play Marvel Rivals (PLAY_ON_DESKTOP) - not accepted
+  [2] Watch a video (WATCH_VIDEO) - accepted
+Select quests (numbers like 1,3 or 'all'):
+```
+
+To skip the prompt and target a specific game:
 
 ```sh
-python main.py --token "YOUR_TOKEN" --game "Fortnite" --status dnd
+python main.py --game "Fortnite" --status dnd
 ```
 
 ## How to use it
