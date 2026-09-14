@@ -238,8 +238,23 @@ async def call(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     return await asyncio.to_thread(func, *args, **kwargs)
 
 
-async def presence_worker(token: str, activity: Dict[str, Any], status: str) -> None:
-    while True:
+def presence_payload(status: str, activities: List[Dict[str, Any]]) -> str:
+    return json.dumps(
+        {
+            "op": 3,
+            "d": {"since": 0, "activities": activities, "status": status, "afk": False},
+        }
+    )
+
+
+async def presence_worker(
+    token: str,
+    activity: Dict[str, Any],
+    status: str,
+    stop_event: Optional[asyncio.Event] = None,
+) -> None:
+    stop_event = stop_event or asyncio.Event()
+    while not stop_event.is_set():
         try:
             async with websockets.connect(GATEWAY_URL, max_size=None) as socket:
                 hello = json.loads(await socket.recv())
@@ -251,6 +266,7 @@ async def presence_worker(token: str, activity: Dict[str, Any], status: str) -> 
                         await socket.send(json.dumps({"op": 1, "d": None}))
 
                 heartbeat_task = asyncio.create_task(heartbeat())
+                reader_task: Optional[asyncio.Task[Any]] = None
                 try:
                     await socket.send(
                         json.dumps(
@@ -273,15 +289,29 @@ async def presence_worker(token: str, activity: Dict[str, Any], status: str) -> 
                         )
                     )
                     log.info("Playing status set to '%s'", activity["name"])
-                    async for raw in socket:
-                        data = json.loads(raw)
-                        if data.get("op") == 7:
+
+                    reader_task = asyncio.create_task(socket.recv())
+                    while not stop_event.is_set():
+                        done, _ = await asyncio.wait({reader_task}, timeout=1)
+                        if reader_task not in done:
+                            continue
+                        raw = reader_task.result()
+                        reader_task = asyncio.create_task(socket.recv())
+                        if json.loads(raw).get("op") == 7:
                             break
+
+                    if stop_event.is_set():
+                        await socket.send(presence_payload(status, []))
+                        log.info("Playing status cleared.")
+                        return
                 finally:
                     heartbeat_task.cancel()
+                    if reader_task is not None:
+                        reader_task.cancel()
         except Exception as exc:
             log.debug("Gateway disconnected: %s", exc)
-        await asyncio.sleep(5)
+        if not stop_event.is_set():
+            await asyncio.sleep(5)
 
 
 async def wait_for_enrollment(client: QuestClient, quest_id: str) -> Dict[str, Any]:
@@ -451,7 +481,8 @@ async def run(args: argparse.Namespace) -> int:
     if app_id:
         activity["application_id"] = app_id
 
-    asyncio.create_task(presence_worker(token, activity, args.status))
+    stop_presence = asyncio.Event()
+    presence_task = asyncio.create_task(presence_worker(token, activity, args.status, stop_presence))
 
     pending = [quest for quest in matches if not completed(quest)]
     for quest in pending:
@@ -471,7 +502,9 @@ async def run(args: argparse.Namespace) -> int:
         except QuestError as exc:
             log.error("Quest completion error: %s", exc)
 
-    await asyncio.Event().wait()
+    stop_presence.set()
+    await presence_task
+    log.info("All selected quests processed.")
     return 0
 
 
