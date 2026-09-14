@@ -200,6 +200,16 @@ def parse_time(value: Optional[str]) -> float:
         return 0.0
 
 
+def expired(quest: Dict[str, Any]) -> bool:
+    expires_at = parse_time((quest.get("config") or {}).get("expires_at"))
+    return bool(expires_at) and expires_at < time.time()
+
+
+def not_started(quest: Dict[str, Any]) -> bool:
+    starts_at = parse_time((quest.get("config") or {}).get("starts_at"))
+    return bool(starts_at) and starts_at > time.time()
+
+
 def matches_game(quest: Dict[str, Any], game: str) -> bool:
     config = quest.get("config") or {}
     messages = config.get("messages") or {}
@@ -414,8 +424,14 @@ async def run(args: argparse.Namespace) -> int:
     except QuestError as exc:
         log.error("Could not fetch quests: %s", exc)
 
+    active = [quest for quest in quests if not expired(quest) and not not_started(quest)]
+    hidden = len(quests) - len(active)
+    if hidden:
+        log.info("Ignoring %d expired or not-yet-started quest(s).", hidden)
+    quests = active
+
     if not quests:
-        log.warning("No quests available for this account.")
+        log.warning("No active quests available for this account.")
         return 1
 
     if args.game:

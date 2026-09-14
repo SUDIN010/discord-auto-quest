@@ -15,6 +15,7 @@ Made for the common quest types:
 - Completes `PLAY_ON_DESKTOP` quests by sending the same quest heartbeats the official client sends
 - Completes `WATCH_VIDEO` / `WATCH_VIDEO_ON_MOBILE` quests
 - Lists all current quests so you can pick which ones to complete
+- Hides expired and not-yet-started quests so the list has no dead/duplicate entries
 - Auto-accepts pending quests, and waits for you if auto-accept fails
 - Shows a **Playing &lt;game&gt;** Rich Presence status through the Discord gateway
 - Automatic retries for rate limits, server errors, and network failures
@@ -80,6 +81,7 @@ Options:
 By default the script lists all of your current quests and asks which to complete:
 
 ```text
+Ignoring 31 expired or not-yet-started quest(s).
 Available quests:
   [1] Play Marvel Rivals (PLAY_ON_DESKTOP) - not accepted
   [2] Watch a video (WATCH_VIDEO) - accepted
@@ -103,10 +105,11 @@ python main.py --game "Fortnite" --status dnd
 
 1. `GET /users/@me` verifies the token.
 2. `GET /quests/@me` lists your quests and their task configs.
-3. Pending quests are accepted with `POST /quests/{id}/enroll`.
-4. `PLAY_ON_DESKTOP`: `POST /quests/{id}/heartbeat` with the quest's `application_id` every 20 seconds, followed by a final `terminal: true` heartbeat.
-5. `WATCH_VIDEO`: `POST /quests/{id}/video-progress` with incrementing timestamps.
-6. A websocket connection to the Discord gateway publishes the **Playing** presence.
+3. Expired and not-yet-started quests are dropped (Discord returns them too, which otherwise causes duplicate-looking entries and `Quest has expired` enroll errors).
+4. Pending quests are accepted with `POST /quests/{id}/enroll`.
+5. `PLAY_ON_DESKTOP`: `POST /quests/{id}/heartbeat` with the quest's `application_id` every 20 seconds, followed by a final `terminal: true` heartbeat.
+6. `WATCH_VIDEO`: `POST /quests/{id}/video-progress` with incrementing timestamps.
+7. A websocket connection to the Discord gateway publishes the **Playing** presence.
 
 ## Limitations
 
