@@ -29,8 +29,8 @@ Made for the common quest types:
 ## Install
 
 ```sh
-git clone https://github.com/<your-username>/<your-repo>.git
-cd <your-repo>
+git clone https://github.com/SUDIN010/discord-auto-quest.git
+cd discord-auto-quest
 python -m venv .venv
 
 # Windows (PowerShell)
